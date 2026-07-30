@@ -609,11 +609,30 @@
                         </div>
                     </div>
 
-                    <div class="bg-white dark:bg-slate-800 p-5 rounded-xl shadow-sm border border-gray-100 dark:border-slate-700">
-                        <div class="flex justify-between items-center mb-6">
-                            <h3 class="font-semibold text-gray-800 dark:text-white">Daftar Siswa Perlu Bimbingan</h3>
-                            <div class="flex gap-2">
-                                <select id="filter-status-bimbingan" onchange="renderBimbinganTable()" class="px-3 py-1.5 rounded-md border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm focus:outline-none">
+                    <!-- Filter & Control Panel Bimbingan -->
+                    <div class="bg-white dark:bg-slate-800 p-5 rounded-xl shadow-sm border border-gray-100 dark:border-slate-700 mb-6">
+                        <h3 class="text-sm font-semibold mb-3 text-gray-800 dark:text-white flex items-center">
+                            <i data-lucide="filter" class="w-4 h-4 mr-2 text-primary"></i> Filter & Pencarian Layanan Bimbingan
+                        </h3>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                            <div class="relative">
+                                <i data-lucide="search" class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4"></i>
+                                <input type="text" id="search-bimbingan" placeholder="Cari nama, kelas, pemicu..." class="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary dark:text-white">
+                            </div>
+                            <div>
+                                <select id="filter-kelas-bimbingan" class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary dark:text-white">
+                                    <!-- Dynamic Option -->
+                                </select>
+                            </div>
+                            <div>
+                                <select id="filter-semester-bimbingan" class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary dark:text-white">
+                                    <option value="all">Semua Semester</option>
+                                    <option value="Ganjil">Semester Ganjil (Juli - Des)</option>
+                                    <option value="Genap">Semester Genap (Jan - Juni)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <select id="filter-status-bimbingan" class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary dark:text-white">
                                     <option value="all">Semua Status</option>
                                     <option value="Belum Diproses">Belum Diproses</option>
                                     <option value="Diproses">Diproses</option>
@@ -622,11 +641,25 @@
                                 </select>
                             </div>
                         </div>
+                    </div>
+
+                    <div class="bg-white dark:bg-slate-800 p-5 rounded-xl shadow-sm border border-gray-100 dark:border-slate-700">
+                        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-3">
+                            <h3 class="font-semibold text-gray-800 dark:text-white">Daftar Siswa Perlu Bimbingan</h3>
+                            <div class="flex flex-wrap gap-2 w-full sm:w-auto">
+                                <button onclick="exportBimbinganMultiplePDF()" class="w-full sm:w-auto px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition text-xs font-semibold flex items-center justify-center gap-1.5 shadow-sm">
+                                    <i data-lucide="file-text" class="w-4 h-4"></i> Cetak PDF Terpilih (<span id="count-selected-bimbingan">0</span>)
+                                </button>
+                            </div>
+                        </div>
 
                         <div class="table-container">
                             <table class="w-full text-left border-collapse">
                                 <thead>
                                     <tr class="bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300 text-sm">
+                                        <th class="p-3 border-b dark:border-slate-600 w-10 text-center">
+                                            <input type="checkbox" id="select-all-bimbingan" onclick="toggleSelectAllBimbingan(this)" class="rounded border-gray-300 dark:border-slate-600 text-primary focus:ring-primary">
+                                        </th>
                                         <th class="p-3 border-b dark:border-slate-600 w-12 text-center">No</th>
                                         <th class="p-3 border-b dark:border-slate-600 w-24">Tgl Input</th>
                                         <th class="p-3 border-b dark:border-slate-600">Nama Siswa</th>
@@ -973,7 +1006,7 @@
         function populateKelasDropdowns() {
             const listKelas = getData('kelas') || [];
             
-            const dropdownsFilter = ['filter-kelas-siswa', 'filter-rekap-class', 'filter-sem-class', 'filter-rekap-harian-class'];
+            const dropdownsFilter = ['filter-kelas-siswa', 'filter-rekap-class', 'filter-sem-class', 'filter-rekap-harian-class', 'filter-kelas-bimbingan'];
             const dropdownsForm = ['form-siswa-kelas', 'input-class', 'form-import-kelas'];
 
             dropdownsFilter.forEach(id => {
@@ -1083,6 +1116,14 @@
 
             document.getElementById('search-siswa').addEventListener('input', renderSiswaTable);
             document.getElementById('filter-kelas-siswa').addEventListener('change', renderSiswaTable);
+
+            // Bimbingan View Event Listeners for Filters
+            if (document.getElementById('search-bimbingan')) {
+                document.getElementById('search-bimbingan').addEventListener('input', renderBimbinganTable);
+                document.getElementById('filter-kelas-bimbingan').addEventListener('change', renderBimbinganTable);
+                document.getElementById('filter-semester-bimbingan').addEventListener('change', renderBimbinganTable);
+                document.getElementById('filter-status-bimbingan').addEventListener('change', renderBimbinganTable);
+            }
 
             document.getElementById('input-date').value = getToday();
             
@@ -1951,19 +1992,58 @@
 
         function renderBimbinganTable() {
             const db = getData();
-            const filter = document.getElementById('filter-status-bimbingan').value;
+            const search = document.getElementById('search-bimbingan') ? document.getElementById('search-bimbingan').value.toLowerCase().trim() : '';
+            const filterClass = document.getElementById('filter-kelas-bimbingan') ? document.getElementById('filter-kelas-bimbingan').value : '';
+            const filterSemester = document.getElementById('filter-semester-bimbingan') ? document.getElementById('filter-semester-bimbingan').value : 'all';
+            const filterStatus = document.getElementById('filter-status-bimbingan') ? document.getElementById('filter-status-bimbingan').value : 'all';
+            
             const tbody = document.getElementById('tbody-bimbingan');
             tbody.innerHTML = '';
 
             let bimData = db.bimbingan;
-            if (filter !== 'all') {
-                bimData = bimData.filter(b => b.status === filter);
+
+            // Filter status
+            if (filterStatus !== 'all') {
+                bimData = bimData.filter(b => b.status === filterStatus);
             }
+
+            // Filter berdasarkan pencarian, kelas, & semester
+            bimData = bimData.filter(b => {
+                const siswa = db.siswa.find(s => s.id === b.studentId);
+                const nama = siswa ? siswa.name.toLowerCase() : '';
+                const kls = siswa ? siswa.class : '';
+                const reason = (b.reason || '').toLowerCase();
+                const note = (b.note || '').toLowerCase();
+
+                // Search match
+                const matchSearch = !search || nama.includes(search) || kls.toLowerCase().includes(search) || reason.includes(search) || note.includes(search);
+                
+                // Class match
+                const matchClass = !filterClass || kls === filterClass;
+
+                // Semester match (berdasarkan bulan pada dateCreated)
+                let matchSemester = true;
+                if (filterSemester !== 'all' && b.dateCreated) {
+                    const month = parseInt(b.dateCreated.split('-')[1]);
+                    if (filterSemester === 'Ganjil') {
+                        matchSemester = month >= 7 && month <= 12;
+                    } else if (filterSemester === 'Genap') {
+                        matchSemester = month >= 1 && month <= 6;
+                    }
+                }
+
+                return matchSearch && matchClass && matchSemester;
+            });
 
             bimData.sort((a,b) => new Date(b.dateCreated) - new Date(a.dateCreated));
 
+            // Reset master checkbox
+            const selectAllCb = document.getElementById('select-all-bimbingan');
+            if (selectAllCb) selectAllCb.checked = false;
+            updateSelectedBimbinganCount();
+
             if(bimData.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="8" class="text-center py-6 text-gray-500">Tidak ada data bimbingan.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="9" class="text-center py-6 text-gray-500">Tidak ada data bimbingan yang cocok dengan filter.</td></tr>`;
                 return;
             }
 
@@ -1990,6 +2070,9 @@
 
                 tbody.innerHTML += `
                     <tr class="${hasNew ? 'bg-red-50/60 dark:bg-red-950/20' : ''} hover:bg-gray-50 dark:hover:bg-slate-700/50 transition">
+                        <td class="p-3 border-b dark:border-slate-700 text-center">
+                            <input type="checkbox" value="${b.id}" class="cb-bimbingan rounded border-gray-300 dark:border-slate-600 text-primary focus:ring-primary" onchange="updateSelectedBimbinganCount()">
+                        </td>
                         <td class="p-3 border-b dark:border-slate-700 text-center">${i+1}</td>
                         <td class="p-3 border-b dark:border-slate-700 text-xs">${b.dateCreated}</td>
                         <td class="p-3 border-b dark:border-slate-700 font-medium dark:text-gray-200">${nama}</td>
@@ -2014,49 +2097,122 @@
             initIcons({ root: tbody });
         }
 
-        function openModalBimbingan(id) {
-            const db = getData();
-            const b = db.bimbingan.find(x => x.id === id);
-            const siswa = db.siswa.find(s => s.id === b.studentId);
-            
-            document.getElementById('form-bim-id').value = b.id;
-            document.getElementById('form-bim-nama').innerText = siswa ? siswa.name : 'Siswa Terhapus';
-            
-            let pemicuInfo = `Pemicu: ${b.reason}`;
-            if (b.hasNewAbsence) {
-                pemicuInfo += ` (⚠️ Ada penambahan ketidakhadiran baru!)`;
+        function toggleSelectAllBimbingan(master) {
+            const checkboxes = document.querySelectorAll('.cb-bimbingan');
+            checkboxes.forEach(cb => cb.checked = master.checked);
+            updateSelectedBimbinganCount();
+        }
+
+        function updateSelectedBimbinganCount() {
+            const selected = document.querySelectorAll('.cb-bimbingan:checked').length;
+            const counter = document.getElementById('count-selected-bimbingan');
+            if (counter) counter.innerText = selected;
+        }
+
+        function exportBimbinganMultiplePDF() {
+            const checkboxes = document.querySelectorAll('.cb-bimbingan:checked');
+            let selectedIds = Array.from(checkboxes).map(cb => cb.value);
+
+            if (selectedIds.length === 0) {
+                showToast('Pilih minimal 1 siswa dengan mencentang kotak centang', 'warning');
+                return;
             }
-            document.getElementById('form-bim-pemicu').innerText = pemicuInfo;
-            document.getElementById('form-bim-status').value = b.status;
-            document.getElementById('form-bim-note').value = b.note;
 
-            const modal = document.getElementById('modal-bimbingan');
-            modal.classList.remove('hidden');
-        }
+            const db = getData();
+            const set = db.settings || getData('settings');
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            const today = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
 
-        function closeModalBimbingan() {
-            document.getElementById('modal-bimbingan').classList.add('hidden');
-        }
+            let pageCount = 0;
 
-        function saveBimbingan() {
-            const id = document.getElementById('form-bim-id').value;
-            const stat = document.getElementById('form-bim-status').value;
-            const note = document.getElementById('form-bim-note').value;
+            selectedIds.forEach((id) => {
+                const b = db.bimbingan.find(x => x.id === id);
+                if (!b) return;
 
-            let db = getData();
-            const index = db.bimbingan.findIndex(b => b.id === id);
-            if(index !== -1) {
-                db.bimbingan[index].status = stat;
-                db.bimbingan[index].note = note;
-                db.bimbingan[index].hasNewAbsence = false; // Reset indikator penambahan absen setelah di-update
-                db.bimbingan[index].dateUpdated = getToday();
-                saveData('bimbingan', db.bimbingan);
-                logHistory(`Update status bimbingan siswa ID:${db.bimbingan[index].studentId} -> ${stat}`);
-                showToast('Status bimbingan diperbarui');
-                closeModalBimbingan();
-                renderBimbinganTable();
-                updateBimbinganBadge();
-                loadDashboard();
+                const siswa = db.siswa.find(s => s.id === b.studentId);
+                const namaSiswa = siswa ? siswa.name : 'Siswa Terhapus';
+                const kelasSiswa = siswa ? siswa.class : '-';
+
+                if (pageCount > 0) {
+                    doc.addPage();
+                }
+
+                // Kop Laporan Resmi
+                doc.setFontSize(14);
+                doc.setFont("helvetica", "bold");
+                doc.text(set.schoolName.toUpperCase(), 105, 18, null, null, "center");
+                
+                doc.setFontSize(11);
+                doc.setFont("helvetica", "normal");
+                doc.text(`LAPORAN INDIVIDUAL PELAYANAN BIMBINGAN & KONSELING`, 105, 25, null, null, "center");
+                doc.text(`Tahun Ajaran: ${set.year} | Semester: ${set.semester}`, 105, 30, null, null, "center");
+                
+                doc.setLineWidth(0.5);
+                doc.line(14, 34, 196, 34);
+                doc.setLineWidth(0.1);
+                doc.line(14, 35, 196, 35);
+
+                // Identitas
+                doc.setFontSize(10);
+                doc.setFont("helvetica", "bold");
+                doc.text("I. IDENTITAS SISWA", 14, 44);
+                
+                doc.setFont("helvetica", "normal");
+                doc.text("Nama Lengkap", 14, 50);
+                doc.text(`:  ${namaSiswa}`, 55, 50);
+                doc.text("Kelas", 14, 56);
+                doc.text(`:  ${kelasSiswa}`, 55, 56);
+                doc.text("Tanggal Masuk Sistem BK", 14, 62);
+                doc.text(`:  ${b.dateCreated}`, 55, 62);
+
+                // Detail Kasus
+                doc.setFont("helvetica", "bold");
+                doc.text("II. DETAIL KASUS & TINDAKAN KONSELING", 14, 72);
+
+                const rincianKasus = [
+                    ["Pemicu Kasus BK", b.reason],
+                    ["Status Penanganan Saat Ini", b.status],
+                    ["Tanggal Update Penanganan", b.dateUpdated || b.dateCreated],
+                    ["Catatan Guru BK / Hasil Tindakan", b.note || "Belum ada catatan atau konseling belum diproses."]
+                ];
+
+                doc.autoTable({
+                    startY: 76,
+                    head: [['Kategori', 'Keterangan Laporan']],
+                    body: rincianKasus,
+                    theme: 'grid',
+                    headStyles: { fillColor: [30, 58, 138], halign: 'left' },
+                    styles: { fontSize: 9, cellPadding: 3.5 },
+                    columnStyles: {
+                        0: { fontStyle: 'bold', cellWidth: 55 },
+                        1: { cellWidth: 127 }
+                    }
+                });
+
+                const finalY = doc.lastAutoTable.finalY || 130;
+
+                doc.setFont("helvetica", "normal");
+                doc.setFontSize(9.5);
+                doc.text(`Dicetak tanggal: ${today}`, 14, finalY + 15);
+                
+                doc.text(`Mengetahui,`, 145, finalY + 15);
+                doc.text(`Guru Bimbingan Konseling (BK)`, 145, finalY + 20);
+                
+                doc.setFont("helvetica", "bold");
+                doc.text(set.guruBK || '( ............................................. )', 145, finalY + 45);
+                if (set.nipBK) {
+                    doc.setFont("helvetica", "normal");
+                    doc.text(`NIP. ${set.nipBK}`, 145, finalY + 50);
+                }
+
+                pageCount++;
+            });
+
+            if (pageCount > 0) {
+                doc.save(`Laporan_BK_Kolektif_${pageCount}_Siswa.pdf`);
+                logHistory(`Download PDF Laporan BK Kolektif (${pageCount} siswa)`);
+                showToast(`Berhasil mengunduh PDF untuk ${pageCount} siswa`);
             }
         }
 
