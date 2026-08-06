@@ -1608,38 +1608,114 @@
             document.getElementById('input-empty-state').classList.remove('hidden');
         }
 
-        function checkAutoBimbingan(monthPrefix, cls) {
+        function checkAutoBimbingan(monthPrefix = null, cls = null) {
             const db = getData();
-            const siswaKelas = db.siswa.filter(s => s.class === cls);
-            const attBulanIni = db.attendance.filter(a => a.date.startsWith(monthPrefix));
+            let bimbinganList = db.bimbingan || [];
+            let modified = false;
 
-            siswaKelas.forEach(siswa => {
-                const recordSiswa = attBulanIni.filter(a => a.studentId === siswa.id);
-                const alpaRecords = recordSiswa.filter(a => a.status === 'A');
-                const izinRecords = recordSiswa.filter(a => a.status === 'I');
+            // Map presensi saat ini untuk pengecekan siswa baru
+            const attMap = {};
+            db.attendance.forEach(a => {
+                if (!a.date || !a.studentId) return;
+                const mPrefix = a.date.substring(0, 7);
+                if (monthPrefix && mPrefix !== monthPrefix) return;
                 
+                const s = db.siswa.find(siswa => siswa.id === a.studentId);
+                if (!s) return;
+                if (cls && s.class !== cls) return;
+
+                const key = `${a.studentId}_${mPrefix}`;
+                if (!attMap[key]) {
+                    attMap[key] = { student: s, monthPrefix: mPrefix, alpa: [], izin: [] };
+                }
+                if (a.status === 'A') attMap[key].alpa.push(a);
+                if (a.status === 'I') attMap[key].izin.push(a);
+            });
+
+            // 1. Evaluasi seluruh data bimbingan yang sudah ada
+            for (let i = bimbinganList.length - 1; i >= 0; i--) {
+                const bim = bimbinganList[i];
+                const student = db.siswa.find(s => s.id === bim.studentId);
+                
+                // Jika siswa sudah tidak ada di data induk
+                if (!student) {
+                    bimbinganList.splice(i, 1);
+                    modified = true;
+                    continue;
+                }
+
+                const mPrefix = bim.monthKey || (bim.reason && bim.reason.match(/\d{4}-\d{2}/) ? bim.reason.match(/\d{4}-\d{2}/)[0] : null);
+                if (!mPrefix) continue;
+
+                if (monthPrefix && mPrefix !== monthPrefix) continue;
+                if (cls && student.class !== cls) continue;
+
+                // Hitung riil dari data rekap kehadiran
+                const studentAtt = db.attendance.filter(a => a.studentId === student.id && a.date.startsWith(mPrefix));
+                const alpaRecords = studentAtt.filter(a => a.status === 'A');
+                const izinRecords = studentAtt.filter(a => a.status === 'I');
+
                 const totalAlpa = alpaRecords.length;
                 const totalIzin = izinRecords.length;
 
+                // Jika masih memenuhi syarat bimbingan (Alpa >= 2 atau Izin >= 3)
                 if (totalAlpa >= 2 || totalIzin >= 3) {
-                    let reasonParts = [];
-                    if (totalAlpa >= 2) {
-                        const alpaDates = alpaRecords.map(a => a.date.split('-')[2])
-                            .sort((x, y) => parseInt(x) - parseInt(y)).join(', ');
-                        reasonParts.push(`Alpa ${totalAlpa}x (Tgl: ${alpaDates})`);
-                    }
-                    if (totalIzin >= 3) {
-                        const izinDates = izinRecords.map(a => a.date.split('-')[2])
-                            .sort((x, y) => parseInt(x) - parseInt(y)).join(', ');
-                        reasonParts.push(`Izin ${totalIzin}x (Tgl: ${izinDates})`);
-                    }
-                    const fullReason = `Indisipliner: ${reasonParts.join(' & ')} bln ${monthPrefix}`;
+                    const alpaDates = alpaRecords.map(a => a.date.split('-')[2]).sort((x, y) => parseInt(x) - parseInt(y)).join(', ');
+                    const izinDates = izinRecords.map(a => a.date.split('-')[2]).sort((x, y) => parseInt(x) - parseInt(y)).join(', ');
 
-                    const existingBim = db.bimbingan.find(b => b.studentId === siswa.id && b.reason.includes(monthPrefix));
-                    if (!existingBim) {
-                        db.bimbingan.push({
+                    let reasonParts = [];
+                    if (totalAlpa >= 2) reasonParts.push(`Alpa ${totalAlpa}x (Tgl: ${alpaDates})`);
+                    if (totalIzin >= 3) reasonParts.push(`Izin ${totalIzin}x (Tgl: ${izinDates})`);
+
+                    const fullReason = `Indisipliner: ${reasonParts.join(' & ')} bln ${mPrefix}`;
+
+                    if (bim.reason !== fullReason) {
+                        const prevAlpa = bim.lastAlpaCount || 0;
+                        const prevIzin = bim.lastIzinCount || 0;
+
+                        // Tandai merah jika ada penambahan absen baru
+                        if (totalAlpa > prevAlpa || totalIzin > prevIzin) {
+                            bim.hasNewAbsence = true;
+                            showToast(`Penambahan ketidakhadiran pada ${student.name}! Tanggal pemicu BK diperbarui.`, 'warning');
+                        }
+
+                        bim.reason = fullReason;
+                        bim.monthKey = mPrefix;
+                        bim.lastAlpaCount = totalAlpa;
+                        bim.lastIzinCount = totalIzin;
+                        bim.dateUpdated = getToday();
+                        modified = true;
+                    }
+                } else {
+                    // Jika data kehadiran dikoreksi sehingga di bawah syarat, HAPUS dari menu bimbingan meskipun sudah di-update
+                    bimbinganList.splice(i, 1);
+                    modified = true;
+                    showToast(`Data bimbingan ${student.name} dihapus dari antrean karena kriteria kehadiran di rekap harian terkoreksi.`, 'info');
+                }
+            }
+
+            // 2. Tambahkan siswa baru yang memenuhi syarat ke antrean bimbingan
+            Object.values(attMap).forEach(item => {
+                const { student, monthPrefix: mPrefix, alpa, izin } = item;
+                const totalAlpa = alpa.length;
+                const totalIzin = izin.length;
+
+                if (totalAlpa >= 2 || totalIzin >= 3) {
+                    const existing = bimbinganList.find(b => b.studentId === student.id && (b.monthKey === mPrefix || (b.reason && b.reason.includes(mPrefix))));
+                    if (!existing) {
+                        const alpaDates = alpa.map(a => a.date.split('-')[2]).sort((x, y) => parseInt(x) - parseInt(y)).join(', ');
+                        const izinDates = izin.map(a => a.date.split('-')[2]).sort((x, y) => parseInt(x) - parseInt(y)).join(', ');
+
+                        let reasonParts = [];
+                        if (totalAlpa >= 2) reasonParts.push(`Alpa ${totalAlpa}x (Tgl: ${alpaDates})`);
+                        if (totalIzin >= 3) reasonParts.push(`Izin ${totalIzin}x (Tgl: ${izinDates})`);
+
+                        const fullReason = `Indisipliner: ${reasonParts.join(' & ')} bln ${mPrefix}`;
+
+                        bimbinganList.push({
                             id: generateId(),
-                            studentId: siswa.id,
+                            studentId: student.id,
+                            monthKey: mPrefix,
                             dateCreated: getToday(),
                             reason: fullReason,
                             status: 'Belum Diproses',
@@ -1649,25 +1725,15 @@
                             lastIzinCount: totalIzin,
                             hasNewAbsence: false
                         });
-                        showToast(`Siswa ${siswa.name} otomatis masuk antrean BK`, 'warning');
-                    } else {
-                        const prevAlpa = existingBim.lastAlpaCount || 0;
-                        const prevIzin = existingBim.lastIzinCount || 0;
-                        
-                        // Cek jika ada penambahan Alpa / Izin baru
-                        if (totalAlpa > prevAlpa || totalIzin > prevIzin || existingBim.reason !== fullReason) {
-                            existingBim.reason = fullReason;
-                            existingBim.lastAlpaCount = totalAlpa;
-                            existingBim.lastIzinCount = totalIzin;
-                            existingBim.hasNewAbsence = true; // Flag indikator penambahan absen!
-                            existingBim.dateUpdated = getToday();
-                            
-                            showToast(`Penambahan ketidakhadiran pada ${siswa.name}! Status BK diperbarui.`, 'warning');
-                        }
+                        modified = true;
+                        showToast(`Siswa ${student.name} otomatis masuk antrean BK`, 'warning');
                     }
                 }
             });
-            saveData('bimbingan', db.bimbingan);
+
+            if (modified) {
+                saveData('bimbingan', bimbinganList);
+            }
         }
 
         function generateRekap() {
@@ -1991,6 +2057,7 @@
         }
 
         function renderBimbinganTable() {
+            checkAutoBimbingan(); // Memastikan sinkronisasi tanggal pemicu saat tabel bimbingan dibuka
             const db = getData();
             const search = document.getElementById('search-bimbingan') ? document.getElementById('search-bimbingan').value.toLowerCase().trim() : '';
             const filterClass = document.getElementById('filter-kelas-bimbingan') ? document.getElementById('filter-kelas-bimbingan').value : '';
@@ -2297,6 +2364,49 @@
 
             doc.save(`Laporan_BK_Siswa_${namaSiswa.replace(/\s+/g, '_')}.pdf`);
             logHistory(`Download PDF Laporan BK Individual: ${namaSiswa}`);
+        }
+
+        function openModalBimbingan(id) {
+            const db = getData();
+            const b = db.bimbingan.find(x => x.id === id);
+            if (!b) return;
+            
+            const siswa = db.siswa.find(s => s.id === b.studentId);
+            
+            document.getElementById('form-bim-id').value = b.id;
+            document.getElementById('form-bim-nama').innerText = siswa ? siswa.name : 'Siswa Terhapus';
+            document.getElementById('form-bim-pemicu').innerText = `Pemicu: ${b.reason}`;
+            document.getElementById('form-bim-status').value = b.status;
+            document.getElementById('form-bim-note').value = b.note || '';
+
+            const modal = document.getElementById('modal-bimbingan');
+            modal.classList.remove('hidden');
+        }
+
+        function closeModalBimbingan() {
+            document.getElementById('modal-bimbingan').classList.add('hidden');
+        }
+
+        function saveBimbingan() {
+            const id = document.getElementById('form-bim-id').value;
+            const stat = document.getElementById('form-bim-status').value;
+            const note = document.getElementById('form-bim-note').value;
+
+            let db = getData();
+            const index = db.bimbingan.findIndex(b => b.id === id);
+            if(index !== -1) {
+                db.bimbingan[index].status = stat;
+                db.bimbingan[index].note = note;
+                db.bimbingan[index].hasNewAbsence = false; // Reset indikator penambahan absen
+                db.bimbingan[index].dateUpdated = getToday();
+                saveData('bimbingan', db.bimbingan);
+                logHistory(`Update status bimbingan siswa ID:${db.bimbingan[index].studentId} -> ${stat}`);
+                showToast('Status bimbingan berhasil diperbarui');
+                closeModalBimbingan();
+                renderBimbinganTable();
+                updateBimbinganBadge();
+                loadDashboard();
+            }
         }
 
         function openModalHariLibur() {
