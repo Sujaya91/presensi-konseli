@@ -598,14 +598,14 @@
 
                     </div>
                 </section>
-
+                <!-- ================= BIMBINGAN VIEW ================= -->
                 <section id="view-bimbingan" class="view-section">
                     
                     <div class="bg-orange-50 dark:bg-orange-900/20 border-l-4 border-secondary p-4 rounded-r-lg mb-6 flex items-start gap-3">
                         <i data-lucide="info" class="w-5 h-5 text-secondary mt-0.5"></i>
                         <div>
                             <h4 class="font-semibold text-orange-800 dark:text-orange-300 text-sm">Info Sistem Otomatis</h4>
-                            <p class="text-xs text-orange-700 dark:text-orange-400 mt-1">Siswa yang memiliki jumlah <b>Alpa &ge; 2 kali</b> atau <b>Izin &ge; 3 kali</b> dalam satu bulan akan otomatis masuk ke daftar antrean bimbingan ini.</p>
+                            <p class="text-xs text-orange-700 dark:text-orange-400 mt-1">Siswa yang memiliki jumlah <b>Alpa &ge; 2 kali</b> atau <b>Izin &ge; 3 kali</b> dalam akumulasi <b>satu semester</b> akan otomatis masuk ke daftar antrean bimbingan ini.</p>
                         </div>
                     </div>
 
@@ -1602,37 +1602,73 @@
             logHistory(`Input kehadiran Kelas ${cls} tgl ${date}`);
             showToast(`${newAttCount} data kehadiran tersimpan`);
             
-            checkAutoBimbingan(date.substring(0,7), cls);
+            checkAutoBimbingan();
             updateBimbinganBadge();
             document.getElementById('input-area').classList.add('hidden');
             document.getElementById('input-empty-state').classList.remove('hidden');
         }
 
-        function checkAutoBimbingan(monthPrefix = null, cls = null) {
+        function getSemesterInfo(dateStr) {
+            if (!dateStr || dateStr.length < 7) return null;
+            const parts = dateStr.split('-');
+            const year = parseInt(parts[0]);
+            const month = parseInt(parts[1]);
+            
+            if (month >= 7 && month <= 12) {
+                return {
+                    key: `${year}_Ganjil`,
+                    term: 'Ganjil',
+                    academicYear: `${year}/${year + 1}`,
+                    label: `Semester Ganjil (${year}/${year + 1})`
+                };
+            } else {
+                return {
+                    key: `${year}_Genap`,
+                    term: 'Genap',
+                    academicYear: `${year - 1}/${year}`,
+                    label: `Semester Genap (${year - 1}/${year})`
+                };
+            }
+        }
+
+        function formatShortDate(dateStr) {
+            const p = dateStr.split('-');
+            if (p.length < 3) return dateStr;
+            const months = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+            const mIdx = parseInt(p[1]) - 1;
+            return `${parseInt(p[2])} ${months[mIdx] || p[1]}`;
+        }
+
+        function checkAutoBimbingan() {
             const db = getData();
             let bimbinganList = db.bimbingan || [];
             let modified = false;
 
-            // Map presensi saat ini untuk pengecekan siswa baru
+            // Group attendance by studentId and semesterKey
             const attMap = {};
+            
             db.attendance.forEach(a => {
                 if (!a.date || !a.studentId) return;
-                const mPrefix = a.date.substring(0, 7);
-                if (monthPrefix && mPrefix !== monthPrefix) return;
-                
-                const s = db.siswa.find(siswa => siswa.id === a.studentId);
-                if (!s) return;
-                if (cls && s.class !== cls) return;
+                const semInfo = getSemesterInfo(a.date);
+                if (!semInfo) return;
 
-                const key = `${a.studentId}_${mPrefix}`;
+                const student = db.siswa.find(s => s.id === a.studentId);
+                if (!student) return;
+
+                const key = `${a.studentId}_${semInfo.key}`;
                 if (!attMap[key]) {
-                    attMap[key] = { student: s, monthPrefix: mPrefix, alpa: [], izin: [] };
+                    attMap[key] = {
+                        student: student,
+                        semInfo: semInfo,
+                        alpa: [],
+                        izin: []
+                    };
                 }
                 if (a.status === 'A') attMap[key].alpa.push(a);
                 if (a.status === 'I') attMap[key].izin.push(a);
             });
 
-            // 1. Evaluasi seluruh data bimbingan yang sudah ada
+            // 1. Evaluasi seluruh data bimbingan yang sudah ada berdasarkan akumulasi semester
             for (let i = bimbinganList.length - 1; i >= 0; i--) {
                 const bim = bimbinganList[i];
                 const student = db.siswa.find(s => s.id === bim.studentId);
@@ -1644,78 +1680,100 @@
                     continue;
                 }
 
-                const mPrefix = bim.monthKey || (bim.reason && bim.reason.match(/\d{4}-\d{2}/) ? bim.reason.match(/\d{4}-\d{2}/)[0] : null);
-                if (!mPrefix) continue;
+                // Tentukan semesterKey untuk entri bimbingan ini
+                let semKey = bim.semesterKey;
+                if (!semKey) {
+                    if (bim.monthKey) {
+                        const sInfo = getSemesterInfo(`${bim.monthKey}-01`);
+                        if (sInfo) semKey = sInfo.key;
+                    } else if (bim.dateCreated) {
+                        const sInfo = getSemesterInfo(bim.dateCreated);
+                        if (sInfo) semKey = sInfo.key;
+                    }
+                }
 
-                if (monthPrefix && mPrefix !== monthPrefix) continue;
-                if (cls && student.class !== cls) continue;
+                if (!semKey) continue;
 
-                // Hitung riil dari data rekap kehadiran
-                const studentAtt = db.attendance.filter(a => a.studentId === student.id && a.date.startsWith(mPrefix));
+                // Hitung riil ketidakhadiran siswa dalam semester ini
+                const studentAtt = db.attendance.filter(a => {
+                    if (a.studentId !== student.id) return false;
+                    const sInfo = getSemesterInfo(a.date);
+                    return sInfo && sInfo.key === semKey;
+                });
+
                 const alpaRecords = studentAtt.filter(a => a.status === 'A');
                 const izinRecords = studentAtt.filter(a => a.status === 'I');
 
                 const totalAlpa = alpaRecords.length;
                 const totalIzin = izinRecords.length;
 
-                // Jika masih memenuhi syarat bimbingan (Alpa >= 2 atau Izin >= 3)
+                // Jika masih memenuhi syarat bimbingan semester (Alpa >= 2 atau Izin >= 3)
                 if (totalAlpa >= 2 || totalIzin >= 3) {
-                    const alpaDates = alpaRecords.map(a => a.date.split('-')[2]).sort((x, y) => parseInt(x) - parseInt(y)).join(', ');
-                    const izinDates = izinRecords.map(a => a.date.split('-')[2]).sort((x, y) => parseInt(x) - parseInt(y)).join(', ');
+                    alpaRecords.sort((x, y) => x.date.localeCompare(y.date));
+                    izinRecords.sort((x, y) => x.date.localeCompare(y.date));
+
+                    const alpaDates = alpaRecords.map(a => formatShortDate(a.date)).join(', ');
+                    const izinDates = izinRecords.map(a => formatShortDate(a.date)).join(', ');
 
                     let reasonParts = [];
                     if (totalAlpa >= 2) reasonParts.push(`Alpa ${totalAlpa}x (Tgl: ${alpaDates})`);
                     if (totalIzin >= 3) reasonParts.push(`Izin ${totalIzin}x (Tgl: ${izinDates})`);
 
-                    const fullReason = `Indisipliner: ${reasonParts.join(' & ')} bln ${mPrefix}`;
+                    const firstDate = studentAtt[0]?.date || bim.dateCreated || getToday();
+                    const sInfo = getSemesterInfo(firstDate);
+                    const semLabel = sInfo ? sInfo.label : semKey;
+                    const fullReason = `Indisipliner: ${reasonParts.join(' & ')} [${semLabel}]`;
 
-                    if (bim.reason !== fullReason) {
+                    if (bim.reason !== fullReason || bim.semesterKey !== semKey) {
                         const prevAlpa = bim.lastAlpaCount || 0;
                         const prevIzin = bim.lastIzinCount || 0;
 
-                        // Tandai merah jika ada penambahan absen baru
+                        // Tandai merah jika ada penambahan absen baru dalam semester ini
                         if (totalAlpa > prevAlpa || totalIzin > prevIzin) {
                             bim.hasNewAbsence = true;
-                            showToast(`Penambahan ketidakhadiran pada ${student.name}! Tanggal pemicu BK diperbarui.`, 'warning');
+                            showToast(`Penambahan ketidakhadiran semester pada ${student.name}! Tanggal pemicu BK diperbarui.`, 'warning');
                         }
 
                         bim.reason = fullReason;
-                        bim.monthKey = mPrefix;
+                        bim.semesterKey = semKey;
                         bim.lastAlpaCount = totalAlpa;
                         bim.lastIzinCount = totalIzin;
                         bim.dateUpdated = getToday();
                         modified = true;
                     }
                 } else {
-                    // Jika data kehadiran dikoreksi sehingga di bawah syarat, HAPUS dari menu bimbingan meskipun sudah di-update
+                    // Jika data kehadiran dikoreksi sehingga di bawah syarat semester, HAPUS dari menu bimbingan
                     bimbinganList.splice(i, 1);
                     modified = true;
-                    showToast(`Data bimbingan ${student.name} dihapus dari antrean karena kriteria kehadiran di rekap harian terkoreksi.`, 'info');
+                    showToast(`Data bimbingan ${student.name} dihapus dari antrean karena kriteria kehadiran semester terkoreksi.`, 'info');
                 }
             }
 
-            // 2. Tambahkan siswa baru yang memenuhi syarat ke antrean bimbingan
+            // 2. Tambahkan siswa baru yang memenuhi syarat semester ke antrean bimbingan
             Object.values(attMap).forEach(item => {
-                const { student, monthPrefix: mPrefix, alpa, izin } = item;
+                const { student, semInfo, alpa, izin } = item;
                 const totalAlpa = alpa.length;
                 const totalIzin = izin.length;
 
                 if (totalAlpa >= 2 || totalIzin >= 3) {
-                    const existing = bimbinganList.find(b => b.studentId === student.id && (b.monthKey === mPrefix || (b.reason && b.reason.includes(mPrefix))));
+                    const existing = bimbinganList.find(b => b.studentId === student.id && (b.semesterKey === semInfo.key || (b.reason && b.reason.includes(semInfo.label))));
                     if (!existing) {
-                        const alpaDates = alpa.map(a => a.date.split('-')[2]).sort((x, y) => parseInt(x) - parseInt(y)).join(', ');
-                        const izinDates = izin.map(a => a.date.split('-')[2]).sort((x, y) => parseInt(x) - parseInt(y)).join(', ');
+                        alpa.sort((x, y) => x.date.localeCompare(y.date));
+                        izin.sort((x, y) => x.date.localeCompare(y.date));
+
+                        const alpaDates = alpa.map(a => formatShortDate(a.date)).join(', ');
+                        const izinDates = izin.map(a => formatShortDate(a.date)).join(', ');
 
                         let reasonParts = [];
                         if (totalAlpa >= 2) reasonParts.push(`Alpa ${totalAlpa}x (Tgl: ${alpaDates})`);
                         if (totalIzin >= 3) reasonParts.push(`Izin ${totalIzin}x (Tgl: ${izinDates})`);
 
-                        const fullReason = `Indisipliner: ${reasonParts.join(' & ')} bln ${mPrefix}`;
+                        const fullReason = `Indisipliner: ${reasonParts.join(' & ')} [${semInfo.label}]`;
 
                         bimbinganList.push({
                             id: generateId(),
                             studentId: student.id,
-                            monthKey: mPrefix,
+                            semesterKey: semInfo.key,
                             dateCreated: getToday(),
                             reason: fullReason,
                             status: 'Belum Diproses',
@@ -1726,7 +1784,7 @@
                             hasNewAbsence: false
                         });
                         modified = true;
-                        showToast(`Siswa ${student.name} otomatis masuk antrean BK`, 'warning');
+                        showToast(`Siswa ${student.name} otomatis masuk antrean BK (${semInfo.label})`, 'warning');
                     }
                 }
             });
